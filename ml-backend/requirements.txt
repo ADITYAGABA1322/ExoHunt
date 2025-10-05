@@ -1,0 +1,34 @@
+# API Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Data Processing
+pandas
+numpy
+
+# Machine Learning
+scikit-learn
+joblib
+xgboost
+lightgbm
+catboost
+
+# Advanced ML
+imbalanced-learn  # SMOTE for class imbalance
+scikit-optimize   # Bayesian optimization
+optuna           # Advanced hyperparameter tuning
+
+# Validation
+pydantic
+
+# HTTP Requests
+requests
+
+# Plotting
+matplotlib
+seaborn
+
+# Testing
+pytest
+httpx

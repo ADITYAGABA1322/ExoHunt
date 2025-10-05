@@ -1,0 +1,69 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+venv/
+env/
+ENV/
+.venv/
+.idea/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+*.log
+
+# ===== Node / Next.js =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.next/
+out/
+coverage/
+build/
+dist/
+.cache/
+.vercel/
+.eslintcache
+
+# ===== Environment Files =====
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*
+!.env.example
+
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ===== VSCode / IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Misc =====
+*.log
+*.tmp
+*.bak
+*.orig
+
+# ===== TypeScript =====
+*.tsbuildinfo
