@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "ml-backend/app/main.py",
+      "src": "ml-backend/api/main.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "ml-backend/app/main.py"
+      "dest": "ml-backend/api/main.py"
     }
   ]
 }
