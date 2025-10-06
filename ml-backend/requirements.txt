@@ -32,3 +32,8 @@ seaborn
 # Testing
 pytest
 httpx
+
+
+
+huggingface_hub
+pydantic
