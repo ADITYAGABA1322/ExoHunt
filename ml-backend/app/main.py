@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from huggingface_hub import hf_hub_download
+from mangum import Mangum  # serverless adapter
 import joblib
 import numpy as np
 import json
@@ -19,22 +20,18 @@ app.add_middleware(
 )
 
 # Hugging Face model repo
-REPO_ID = "XcodeAddy/exoplanet-model-advanced"  # 👈 Replace with your exact repo ID
+REPO_ID = "XcodeAddy/exoplanet-model-advanced"  # Replace with your repo ID
 
 # Globals
 model = None
 scaler = None
 metadata = None
 
-
 @app.on_event("startup")
 async def load_model():
     """Download & load model from Hugging Face Hub"""
     global model, scaler, metadata
-
     try:
-        print("📥 Downloading model files from Hugging Face...")
-
         model_path = hf_hub_download(repo_id=REPO_ID, filename="exoplanet_model_advanced.pkl")
         scaler_path = hf_hub_download(repo_id=REPO_ID, filename="scaler_advanced.pkl")
         metadata_path = hf_hub_download(repo_id=REPO_ID, filename="model_metadata_advanced.json")
@@ -45,29 +42,15 @@ async def load_model():
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
 
-        print("✅ Advanced model loaded successfully from Hugging Face!")
-        print(f"   Accuracy: {metadata['metrics']['accuracy'] * 100:.2f}%")
-        print(f"   F1 Score: {metadata['metrics']['f1_score'] * 100:.2f}%")
-
     except Exception as e:
-        print(f"❌ Failed to load model: {e}")
+        print(f"Failed to load model: {e}")
 
-
+# Pydantic models
 class PlanetInput(BaseModel):
-    """Input schema for planet prediction"""
-    period: float = Field(..., description="Orbital period (days)", gt=0)
-    duration: float = Field(..., description="Transit duration (hours)", gt=0)
-    depth: float = Field(..., description="Transit depth (ppm)", gt=0)
-    prad: float = Field(..., description="Planet radius (Earth radii)", gt=0)
-    teq: float = Field(..., description="Equilibrium temperature (K)", gt=0)
-    insol: float = Field(..., description="Insolation flux (Earth flux)", gt=0)
-    steff: float = Field(..., description="Stellar temperature (K)", gt=0)
-    slogg: float = Field(..., description="Stellar surface gravity", gt=0)
-    srad: float = Field(..., description="Stellar radius (Solar radii)", gt=0)
-
+    period: float; duration: float; depth: float; prad: float
+    teq: float; insol: float; steff: float; slogg: float; srad: float
 
 class PredictionResponse(BaseModel):
-    """Response schema"""
     is_exoplanet: bool
     confidence: float
     probability_exoplanet: float
@@ -75,22 +58,15 @@ class PredictionResponse(BaseModel):
     classification: str
     model_metrics: Dict
 
-
+# Feature engineering
 def engineer_features(data: PlanetInput) -> np.ndarray:
-    """Engineer the same 30 features used in training"""
     features = {
-        'period': data.period,
-        'duration': data.duration,
-        'depth': data.depth,
-        'prad': data.prad,
-        'teq': data.teq,
-        'insol': data.insol,
-        'steff': data.steff,
-        'slogg': data.slogg,
-        'srad': data.srad
+        'period': data.period, 'duration': data.duration, 'depth': data.depth,
+        'prad': data.prad, 'teq': data.teq, 'insol': data.insol,
+        'steff': data.steff, 'slogg': data.slogg, 'srad': data.srad
     }
 
-    # Derived and physical features
+    # Derived features
     features['transit_depth_ratio'] = data.depth / (data.prad**2 + 1e-10)
     features['duration_period_ratio'] = data.duration / (data.period + 1e-10)
     features['stellar_density'] = 10**data.slogg / (data.srad**2 + 1e-10)
@@ -98,22 +74,14 @@ def engineer_features(data: PlanetInput) -> np.ndarray:
     features['planet_density'] = (data.prad**3) / (data.period**2 + 1e-10)
     features['equilibrium_temp_ratio'] = data.teq / (data.steff + 1e-10)
     features['irradiation_ratio'] = data.insol / (data.teq + 1e-10)
-
-    # Orbital mechanics
     features['semi_major_axis'] = ((data.period / 365.25)**2 * data.srad)**(1/3)
     features['orbital_velocity'] = (2 * np.pi * features['semi_major_axis']) / (data.period + 1e-10)
-
-    # Habitability indicators
     features['habitable_zone_distance'] = features['semi_major_axis'] / (np.sqrt(data.insol) + 1e-10)
     features['surface_gravity'] = data.slogg * (data.prad**2)
-
-    # Statistical transformations
     features['log_period'] = np.log10(data.period + 1)
     features['log_insol'] = np.log10(data.insol + 1)
     features['log_depth'] = np.log10(data.depth + 1)
     features['sqrt_prad'] = np.sqrt(data.prad)
-
-    # Interaction and polynomial features
     features['prad_teq_interaction'] = data.prad * data.teq
     features['period_depth_interaction'] = data.period * data.depth
     features['insol_steff_interaction'] = data.insol * data.steff
@@ -125,103 +93,37 @@ def engineer_features(data: PlanetInput) -> np.ndarray:
     feature_array = np.array([features[name] for name in feature_order])
     return feature_array.reshape(1, -1)
 
-
+# Routes
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    return {
-        "message": "🚀 ExoHunt Advanced API v2.0",
-        "status": "operational",
-        "model_loaded": model is not None,
-        "accuracy": f"{metadata['metrics']['accuracy'] * 100:.2f}%" if metadata else "N/A"
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """Health check"""
-    if model is None or scaler is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    return {
-        "status": "healthy",
-        "model": "StackingClassifier",
-        "metrics": metadata['metrics'] if metadata else {}
-    }
-
+    return {"message": "ExoHunt ML backend running!", "model_loaded": model is not None}
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_exoplanet(planet: PlanetInput):
-    """Predict exoplanet probability"""
     if model is None or scaler is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
+    X = engineer_features(planet)
+    X_scaled = scaler.transform(X)
+    prediction = model.predict(X_scaled)[0]
+    probabilities = model.predict_proba(X_scaled)[0]
+    prob_non = float(probabilities[0])
+    prob_exo = float(probabilities[1])
+    confidence = max(prob_non, prob_exo)
+    classification = (
+        "🌟 Highly Likely Exoplanet" if prob_exo >= 0.9 else
+        "✨ Probable Exoplanet" if prob_exo >= 0.7 else
+        "🔍 Possible Exoplanet" if prob_exo >= 0.5 else
+        "❓ Unlikely Exoplanet" if prob_exo >= 0.3 else
+        "❌ Not an Exoplanet"
+    )
+    return PredictionResponse(
+        is_exoplanet=bool(prediction),
+        confidence=confidence,
+        probability_exoplanet=prob_exo,
+        probability_non_exoplanet=prob_non,
+        classification=classification,
+        model_metrics=metadata['metrics']
+    )
 
-    try:
-        X = engineer_features(planet)
-        X_scaled = scaler.transform(X)
-        prediction = model.predict(X_scaled)[0]
-        probabilities = model.predict_proba(X_scaled)[0]
-
-        prob_non_exoplanet = float(probabilities[0])
-        prob_exoplanet = float(probabilities[1])
-        confidence = max(prob_exoplanet, prob_non_exoplanet)
-
-        # Classification logic
-        if prob_exoplanet >= 0.9:
-            classification = "🌟 Highly Likely Exoplanet"
-        elif prob_exoplanet >= 0.7:
-            classification = "✨ Probable Exoplanet"
-        elif prob_exoplanet >= 0.5:
-            classification = "🔍 Possible Exoplanet"
-        elif prob_exoplanet >= 0.3:
-            classification = "❓ Unlikely Exoplanet"
-        else:
-            classification = "❌ Not an Exoplanet"
-
-        return PredictionResponse(
-            is_exoplanet=bool(prediction),
-            confidence=confidence,
-            probability_exoplanet=prob_exoplanet,
-            probability_non_exoplanet=prob_non_exoplanet,
-            classification=classification,
-            model_metrics=metadata['metrics']
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
-
-
-@app.post("/batch-predict")
-async def batch_predict(planets: List[PlanetInput]):
-    """Batch prediction endpoint"""
-    if model is None or scaler is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    results = []
-    for planet in planets:
-        try:
-            result = await predict_exoplanet(planet)
-            results.append(result.dict())
-        except Exception as e:
-            results.append({"error": str(e)})
-
-    return {"predictions": results, "total": len(results)}
-
-
-@app.get("/model-info")
-async def model_info():
-    """Get model metadata"""
-    if metadata is None:
-        raise HTTPException(status_code=503, detail="Model metadata not available")
-    return {
-        "model_type": metadata['model_type'],
-        "features_used": len(metadata['feature_names']),
-        "feature_names": metadata['feature_names'],
-        "training_date": metadata['training_date'],
-        "metrics": metadata['metrics'],
-        "notes": metadata['notes']
-    }
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# Wrap FastAPI for serverless
+handler = Mangum(app)

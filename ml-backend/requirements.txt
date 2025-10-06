@@ -37,3 +37,4 @@ httpx
 
 huggingface_hub
 pydantic
+mangum
